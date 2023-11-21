@@ -1,0 +1,6 @@
+*.swp
+dist/
+node_modules/
+package-lock.json
+config/init-gateway_systemd.conf
+config/init-gateway_upstart.conf

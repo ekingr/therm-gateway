@@ -1,0 +1,114 @@
+#! /bin/bash
+# deploy-frontend
+
+# REQUIREMENTS:
+# wwwHome: www & auth
+# nginx server configuration in wwwHome
+
+# Check the main parameter
+if [ "$1" != "INSTALL" ] && [ "$1" != "UPDATE" ]; then
+    echo "USAGE: $ ./utils/deploy-frontend INSTALL|UPDATE"
+    exit 1
+fi
+
+set -o errexit
+set -o nounset
+
+
+# Check that SSH-AGENT is running
+# Otherwise running the script would be painful
+ssh-add -l &>/dev/null && rc=$? || rc=$?
+if [ "$rc" -ne 0 ]; then
+    echo "You should run this script with a valid ssh-add session."
+    exit 1
+fi
+
+
+# Local directories
+#   dist/frontend/index.html
+locDist="dist/frontend"
+# Server address
+srvHost=xxx
+srvHostPort=xxx
+srvHostUser=xxx
+# Server temporary distribution
+srvDist="/tmp/therm-frontend/dist"
+# Server target directories
+#   ~/apps/home/therm/www/index.html
+#   ~/apps/home/www/therm/ -> ~/apps/home/therm/www/
+srvAppRoot="/home/$srvHostUser/apps/home/therm"
+srvWwwRoot="/home/$srvHostUser/apps/home/www"
+
+# Checking existence of selected needed files
+[ -f "$locDist/index.html" ]
+
+
+# Server installation script
+install () {
+    set -o errexit
+    set -o nounset
+
+    # Checking required variables
+    echo "Installing to $(whoami)@$(hostname):$srvAppRoot"
+    echo "${srvAppRoot:?}" > /dev/null
+    echo "${srvDist:?}" > /dev/null
+    echo "${srvWwwRoot:?}" > /dev/null
+
+    # Dist deployment
+    echo "  Deploying to $srvAppRoot/www"
+    mkdir -p "$srvAppRoot/www"
+    cp -r "$srvDist/"* "$srvAppRoot/www/"
+
+    # Web deployment
+    echo "  Linking web root of $srvWwwRoot/therm"
+    mkdir -p "$srvWwwRoot/"
+    ln -sf "$srvAppRoot/www/" "$srvWwwRoot/therm"
+
+    # Reloading server
+    echo "  Reloading server"
+    sudo service nginx reload
+
+    # Cleaning-up dist folder
+    echo "  Cleaning-up dist forlder"
+    rm -r "$srvDist"
+
+    echo "  Installation successful :)"
+    exit 0
+}
+
+
+# Server update script
+update () {
+    set -o errexit
+    set -o nounset
+
+    # Checking required variables
+    echo "Installing to $(whoami)@$(hostname):$srvAppRoot"
+    echo "${srvAppRoot:?}" > /dev/null
+    echo "${srvDist:?}" > /dev/null
+
+    # Dist deployment
+    echo "  Deploying to $srvAppRoot/www"
+    mkdir -p "$srvAppRoot/www"
+    cp -r "$srvDist/"* "$srvAppRoot/www"
+
+    # Cleaning-up dist folder
+    echo "  Cleaning-up dist forlder"
+    rm -r "$srvDist"
+
+    echo "  Update successful :)"
+    exit 0
+}
+
+
+echo "Uploading distribution files to $srvHostUser@$srvHost:$srvHostPort:$srvDist"
+ssh -p $srvHostPort "$srvHostUser@$srvHost" "mkdir -p \"$srvDist/\""
+scp -rpP $srvHostPort "$locDist/"* "$srvHostUser@$srvHost:$srvDist"
+if [ "$1" == "INSTALL" ]; then
+    ssh -tp $srvHostPort "$srvHostUser@$srvHost" "$(typeset -f install); srvAppRoot=\"$srvAppRoot\" srvDist=\"$srvDist\" srvWwwRoot=\"$srvWwwRoot\" install"
+elif [ "$1" == "UPDATE" ]; then
+    ssh -tp $srvHostPort "$srvHostUser@$srvHost" "$(typeset -f update); srvAppRoot=\"$srvAppRoot\" srvDist=\"$srvDist\" update"
+fi
+
+echo "Deployment successful :)"
+exit 0

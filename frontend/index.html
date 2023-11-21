@@ -1,0 +1,361 @@
+<!DOCTYPE html>
+<html>
+<head>
+	<meta charset='utf-8'>
+	<meta name='viewport' content='width=device-width, initial-scale=1'>
+	<meta name='apple-mobile-web-app-capable' content='yes'>
+    <meta name='description' content='Thermostat de la Maison'>
+    <meta name='author' content='Guillaume Richard'>
+    <meta name='owner' content='Guillaume Richard'>
+    <meta name='publisher' content='ekingr'>
+    <meta name='robot' content='index, nofollow, noarchive'>
+    <title>Thermostat</title>
+    <style type='text/css'>
+html {
+  box-sizing: border-box;
+}
+*, *:before, *:after {
+  box-sizing: inherit;
+}
+input,
+select,
+button {
+    font-family: inherit;
+    font-size: inherit;
+    font-weight: inherit;
+}
+body {
+    width: 100%;
+    max-width: 400px;
+    margin: 0 auto;
+    padding: 0;
+    border: 0;
+    font-family: "Segoe UI", "SF Pro Text", HelveticaNeue, Calibri, sans-serif;
+    color: #343434;
+}
+#main {
+    display: grid;
+    grid-template-columns: 10fr 2fr;
+    gap: .5em;
+    align-items: center;
+    padding: 0 1em;
+}
+#main > .header {
+    grid-column-end: span 2;
+    font-size: 2em;
+    line-height: 1.6em;
+    border-bottom: 1px solid #999;
+}
+#main > div,
+#main > button {
+    overflow: hidden;
+}
+#main.view .status.edit {
+    display: none;
+}
+#main.edit .status.view {
+    display: none;
+}
+.status {
+    height: 50px;
+    display: flex;
+    justify-content: center;
+    align-items: center;
+    text-align: center;
+    line-height: 1em;
+}
+.status.view {
+    color: #4B2D83;
+    border: 1px solid #4B2D83;
+    font-size: 1.2em;
+}
+.status.view.isOn   { color: #28A745; border-color: #28A745; }
+.status.view.isOff  { color: #0D6EFD; border-color: #0D6EFD; }
+.status.view.isErr  { color: #DC3545; border-color: #DC3545; }
+.status.view.isFOn  { color: #1B722F; border-color: #1B722F; font-size: .9em; }
+.status.view.isFOff { color: #094BAC; border-color: #094BAC; font-size: .9em; }
+.status.view.isNovo { color: #AC560E; border-color: #AC560E; font-size: .9em; }
+button.status.view,
+button.status.edit {
+    color: #343434;
+    border: 1px solid #343434;
+    border-radius: .4em;
+    font-size: .8em;
+    height: 35px;
+}
+
+.status input[type='checkbox'] {
+    display: none;
+}
+.status input[type='checkbox'] + label {
+    outline: 0;
+    display: block;
+    width: 3em;
+    height: 1.5em;
+    position: relative;
+    margin: auto;
+    user-select: none;
+    background: #0D6EFD; /* OFF */
+    border-radius: 1.5em;
+    padding: 2px;
+    transition: all .4s ease;
+}
+.status input[type='checkbox'] + label:after {
+    position: relative;
+    display: block;
+    content: "";
+    width: 50%;
+    height: 100%;
+    left: 0;
+    border-radius: 50%;
+    background: #fff;
+    transition: all .2s ease;
+    box-shadow: 0 0 0 1px rgba(0, 0, 0, 0.1), 0 4px 0 rgba(0, 0, 0, 0.08);
+}
+.status input[type='checkbox']:checked + label:after {
+    left: 50%;
+}
+.status input[type='checkbox']:checked + label {
+    background: #28A745; /* ON */
+}
+.details {
+    font-family: 'Source Code Pro', monospace;
+    font-size: .8em;
+    color: #bbb;
+}
+.details.bottom {
+    padding-left: 1em;
+    font-size: .6em;
+    white-space: pre-wrap;
+}
+#loginLnk {
+    display: none;
+}
+#overlay {
+    position: absolute;
+    top: 0;
+    left: 0;
+    z-index: 999;
+    margin: 0;
+    padding: 0;
+    border: 0;
+    width: 100%;
+    height: 100%;
+    background-color: rgba(0,0,0,.2);
+    display: none;
+}
+#overlay.disabled {
+    display: block;
+}
+    </style>
+    <link rel='icon' href='icon.png' type='image/png'/>
+    <link rel='icon' href='icon.svg' type='image/svg+xml'/>
+    <link rel='apple-touch-icon' href='icon.png'/>
+    <link rel='mask-icon' href='icon_mask.svg' color='#e01b24'/>
+</head>
+<body>
+<div id='main' class='view'>
+    <div class='header'>Maison</div>
+    <div>1. Salon
+        <br><span class='details'>R<span id='detR1'>x</span> Si<span id='detSi1'>x</span> So<span id='detSo1'>x</span></span>
+    </div>
+    <div id='st1' class='status view'>na</div>
+    <div class='status edit'>
+        <input type='checkbox' id='rel1' name='rel1'><label for='rel1'></label>
+    </div>
+    <div>2. Chambre A
+        <br><span class='details'>R<span id='detR2'>x</span> Si<span id='detSi2'>x</span> So<span id='detSo2'>x</span></span>
+    </div>
+    <div id='st2' class='status view'>na</div>
+    <div class='status edit'>
+        <input type='checkbox' id='rel2' name='rel2'><label for='rel2'></label>
+    </div>
+    <div>3. Chambre B
+        <br><span class='details'>R<span id='detR3'>x</span> Si<span id='detSi3'>x</span> So<span id='detSo3'>x</span></span>
+    </div>
+    <div id='st3' class='status view'>na</div>
+    <div class='status edit'>
+        <input type='checkbox' id='rel3' name='rel3'><label for='rel3'></label>
+    </div>
+    <div>
+    </div>
+    <button class='status view' id='butMod'>✎ Modifier</button>
+    <button class='status edit' id='butCan'>✗ Annuler</button>
+    <div>
+    </div>
+    <button class='status edit' id='butSub'>✓ Valider</button>
+</div>
+<p class='details bottom' id='detApi'></p>
+<p class='details bottom' id='loginLnk'><a href='/login.html'>Log-in</a></p>
+<div id='overlay'></div>
+<script type='text/javascript'>
+const API_DUMMY_STATUS = {
+    updateOk: false,
+    updateStatus: 'na',
+    updateStatusCode: 0,
+    updateTime: 0,
+    therm: {rel1: 'x', rel2: 'x', rel3: 'x'},
+};
+const API = {
+    getState: () => {
+        return fetch('/api/therm/status.json', {
+            method: 'GET',
+        }).then(r => {
+            if (!r.ok) {
+                console.error('API error getting state: ' + r.status + ' ' + r.statusText);
+                return {...API_DUMMY_STATUS, apiOk: false, apiStatusCode: r.status, apiStatus: r.statusText};
+                const err = new Error('API error getting state: ' + r.status + ' ' + r.statusText);
+                err.apiErr = 'apiErr';
+                err.apiStatus = r.status;
+                throw err;
+            }
+            return r.json().then(j => ({...j, apiOk: true, apiStatusCode: r.status, apiStatus: r.statusText}));
+        });
+    },
+    setState: state => {
+        return fetch('/api/therm/set', {
+            method: 'POST',
+            headers: {'Content-Type': 'application/json; charset=utf-8'},
+            body: JSON.stringify({state:state}),
+        }).then(r => r.text());
+    },
+};
+
+const _id = id => document.getElementById(id);
+const _setNode = (node, val) => {
+    let v = val;
+    if (typeof(val) == 'boolean')
+        v = val ? 1 : 0;
+    node.textContent = v;
+}
+const UI_STATE_EDIT = 'edit';
+const UI_STATE_VIEW = 'view';
+const ui = {
+    // Main container
+    main: _id('main'),
+    loginLnk: _id('loginLnk'),
+    overlay: _id('overlay'),
+    // Action buttons
+    butMod: _id('butMod'),
+    butCan: _id('butCan'),
+    butSub: _id('butSub'),
+    // Status nodes
+    st1: _id('st1'),
+    st2: _id('st2'),
+    st3: _id('st3'),
+    // Detail status
+    detR1: _id('detR1'),
+    detR2: _id('detR2'),
+    detR3: _id('detR3'),
+    detSi1: _id('detSi1'),
+    detSi2: _id('detSi2'),
+    detSi3: _id('detSi3'),
+    detSo1: _id('detSo1'),
+    detSo2: _id('detSo2'),
+    detSo3: _id('detSo3'),
+    detApi: _id('detApi'),
+    // Checkboxes
+    rel1: _id('rel1'),
+    rel2: _id('rel2'),
+    rel3: _id('rel3'),
+}
+const UI_INPUTS = [ui.butMod, ui.butCan, ui.butSub, ui.rel1, ui.rel2, ui.rel3];
+const disableUI = () => {UI_INPUTS.forEach(n => {n.disabled = true;}); ui.overlay.className='disabled';};
+const enableUI = () => {UI_INPUTS.forEach(n => {n.disabled = false;}); ui.overlay.className='';};
+
+function inferModuleState(r, si, so) {
+    if (!si && !so)
+        return {txt: 'Pas de tension', cls: 'isNovo'}
+    if (!si && so)
+        return {txt: 'ERR', cls: 'isErr'}
+    if (si && !so && !r)
+        return {txt: 'OFF', cls: 'isOff'}
+    if (si && !so && r)
+        return {txt: 'Arrêt forcé', cls: 'isFOff'}
+    if (si && so && !r)
+        return {txt: 'Marche forcée', cls: 'isFOn'}
+    if (si && so && r)
+        return {txt: 'ON', cls: 'isOn'}
+    return {txt: 'na', cls: ''}
+}
+
+function updateState() {
+    console.log('updateState: Querrying API.getState...');
+    disableUI();
+    return API.getState().then(apist => {
+        console.log('updateState: refreshing UI with: ', apist);
+
+        let apiDet = 'Gateway ' + (apist.apiOk ? 'OK' : 'ERROR') +
+            ' (' + (new Date()).toLocaleString() + ': ' + apist.apiStatusCode + ' ' + apist.apiStatus + ')';
+
+        if (apist.apiOk) {
+            // Processing state
+            let st1 = inferModuleState(apist.therm.rel1,  apist.therm.sens01, apist.therm.sens11);
+            let st2 = inferModuleState(apist.therm.rel2,  apist.therm.sens02, apist.therm.sens12);
+            let st3 = inferModuleState(apist.therm.rel3,  apist.therm.sens03, apist.therm.sens13);
+            _setNode(ui.st1, st1.txt);
+            _setNode(ui.st2, st2.txt);
+            _setNode(ui.st3, st3.txt);
+            ui.st1.className = "status view " + st1.cls;
+            ui.st2.className = "status view " + st2.cls;
+            ui.st3.className = "status view " + st3.cls;
+
+            // Detail nodes
+            _setNode(ui.detR1, apist.therm.rel1);
+            _setNode(ui.detR2, apist.therm.rel2);
+            _setNode(ui.detR3, apist.therm.rel3);
+            _setNode(ui.detSi1, apist.therm.sens01);
+            _setNode(ui.detSi2, apist.therm.sens02);
+            _setNode(ui.detSi3, apist.therm.sens03);
+            _setNode(ui.detSo1, apist.therm.sens11);
+            _setNode(ui.detSo2, apist.therm.sens12);
+            _setNode(ui.detSo3, apist.therm.sens13);
+
+            // Checkboxes
+            ui.rel1.checked = apist.therm.rel1;
+            ui.rel2.checked = apist.therm.rel2;
+            ui.rel3.checked = apist.therm.rel3;
+
+            apiDet = 'Ctrl    ' + (apist.updateOk ? 'OK' : 'ERROR') +
+                ' (' + (new Date(apist.updateTime*1000)).toLocaleString() + ': ' + apist.updateStatus + ')\n' +
+                apiDet;
+        }
+
+        // API details
+        _setNode(ui.detApi, apiDet);
+
+        // If unauthorized
+        if (apist.apiStatusCode == 403)
+            ui.loginLnk.style.display = 'block';
+
+        enableUI();
+    });
+}
+
+const sleep = ms => new Promise(r => setTimeout(r, ms));
+document.body.onload = eOL => {
+    disableUI();
+    ui.butMod.onclick = async e => {await updateState(); ui.main.className = UI_STATE_EDIT};
+    ui.butCan.onclick = async e => {await updateState(); ui.main.className = UI_STATE_VIEW};
+    ui.butSub.onclick = async e => {
+        disableUI();
+        console.log(await API.setState({
+            rel1: ui.rel1.checked,
+            rel2: ui.rel2.checked,
+            rel3: ui.rel3.checked,
+        }));
+        ui.main.className = UI_STATE_VIEW;
+        await sleep(500);
+        enableUI();
+        await updateState();
+        disableUI();
+        await sleep(1000);
+        enableUI();
+        await updateState();
+    }
+    enableUI();
+    updateState();
+};
+</script>
+</body>
+</html>

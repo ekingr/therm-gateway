@@ -1,0 +1,107 @@
+#! /bin/bash
+# deploy-proxy
+
+# REQUIREMENTS:
+# nginx: web server
+# ufw: firewall
+
+# Check the main parameter
+if [ "$1" != "INSTALL" ]; then
+    echo "USAGE: $ ./deploy-proxy INSTALL"
+    exit 1
+fi
+
+set -o errexit
+set -o nounset
+
+
+# Check that SSH-AGENT is running
+# Otherwise running the script would be painful
+ssh-add -l &>/dev/null && rc=$? || rc=$?
+if [ "$rc" -ne 0 ]; then
+    echo "You should run this script with a valid ssh-add session."
+    exit 1
+fi
+
+servicePort=xxx
+
+# Local directories
+#   dist/proxy/nginx-proxy.conf
+locDist="dist/proxy"
+# Server address
+srvHost=xxx
+srvHostPort=xxx
+srvHostUser=xxx
+# Server temporary distribution
+srvDist="/tmp/therm-proxy/dist"
+# Server target directories
+#   ~/apps/therm-proxy/ctrl.my.example.com.conf
+#   ~/apps/therm-proxy/ctrl.my.example.com.crt
+#   ~/apps/therm-proxy/ctrl.my.example.com.key
+#   ~/apps/therm-proxy/ctrl.my.example.com.dhparam
+srvAppRoot="/home/$srvHostUser/apps/therm-proxy"
+
+# Checking existence of selected needed files
+[ -f "$locDist/nginx-proxy.conf" ]
+
+
+# Server installation script
+install () {
+    set -o errexit
+    set -o nounset
+
+    # Checking required variables
+    echo "Installing to $(whoami)@$(hostname):$srvAppRoot"
+    echo "${srvAppRoot:?}" > /dev/null
+    echo "${srvDist:?}" > /dev/null
+    echo "${servicePort:?}" > /dev/null
+
+    # Deploying dist
+    echo "  Deploying to $srvAppRoot/"
+    mkdir -p "$srvAppRoot/"
+    cp "$srvDist/nginx-proxy.conf" "$srvAppRoot/proxy.my.example.com.conf"
+
+    # Creating RSA certificate & DH params for HTTPS
+    echo "  Creating RSA certificate"
+    openssl req -x509 -nodes -sha256 -days 3650 -newkey rsa:2048 -keyout "$srvAppRoot/proxy.my.example.com.key" -out "$srvAppRoot/proxy.my.example.com.crt" -subj "/C=FR/ST=Paris/L=Paris/O=Domotique/OU=Thermal/CN=proxy.my.example.com/emailAddress=postmaster@my.example.com" -addext "subjectAltName = DNS:proxy.my.example.com"
+    openssl dhparam -out "$srvAppRoot/proxy.my.example.com.dhparam" 2048
+    chmod 600 "$srvAppRoot/proxy.my.example.com.crt"
+    chmod 600 "$srvAppRoot/proxy.my.example.com.key"
+    chmod 600 "$srvAppRoot/proxy.my.example.com.dhparam"
+
+    # Nginx configuration
+    echo "  Nginx configuration"
+    sudo ln -sf "$srvAppRoot/proxy.my.example.com.conf" "/etc/nginx/sites-available/proxy.my.example.com.conf"
+    sudo ln -sf "/etc/nginx/sites-available/proxy.my.example.com.conf" "/etc/nginx/sites-enabled/proxy.my.example.com.crt"
+    sudo mkdir -p "/etc/nginx/ssl/"
+    sudo ln -sf "$srvAppRoot/proxy.my.example.com.crt" "/etc/nginx/ssl/proxy.my.example.com.crt"
+    sudo ln -sf "$srvAppRoot/proxy.my.example.com.key" "/etc/nginx/ssl/proxy.my.example.com.key"
+    sudo ln -sf "$srvAppRoot/proxy.my.example.com.dhparam" "/etc/nginx/ssl/proxy.my.example.com.dhparam"
+    sudo nginx -t
+    sudo service nginx reload
+
+    # Opening app port on firewall
+    echo "  Opening app port"
+    sudo ufw allow "$servicePort"
+
+    # Cleaning-up dist folder
+    echo "  Cleaning-up dist forlder"
+    rm -r "$srvDist"
+
+    echo "  Installation successful :)"
+    exit 0
+}
+
+
+echo "Uploading distribution files to $srvHostUser@$srvHost:$srvHostPort:$srvDist"
+ssh -p $srvHostPort "$srvHostUser@$srvHost" "mkdir -p \"$srvDist/\""
+scp -rpP $srvHostPort "$locDist/"* "$srvHostUser@$srvHost:$srvDist"
+if [ "$1" == "INSTALL" ]; then
+    ssh -tp $srvHostPort "$srvHostUser@$srvHost" "$(typeset -f install); srvAppRoot=\"$srvAppRoot\" srvDist=\"$srvDist\" servicePort=\"$servicePort\" install"
+fi
+
+echo "Downloading self-signed certificate, needed for the gateway to accept TLS communication"
+scp -rpP $srvHostPort "$srvHostUser@$srvHost:$srvAppRoot/proxy.my.example.com.crt" "$locDist/"
+
+echo "Deployment successful :)"
+exit 0

@@ -1,0 +1,185 @@
+#! /bin/bash
+# deploy-gateway
+
+# REQUIREMENTS:
+# wwwHome: www & auth
+# nginx server configuration in wwwHome
+# auth config in wwwHome
+
+# Check the main parameter
+if [ "$1" != "INSTALL" ] && [ "$1" != "UPDATE" ]; then
+    echo "USAGE: $ ./utils/deploy-gateway INSTALL|UPDATE"
+    exit 1
+fi
+
+set -o errexit
+set -o nounset
+
+
+# Check that SSH-AGENT is running
+# Otherwise running the script would be painful
+ssh-add -l &>/dev/null && rc=$? || rc=$?
+if [ "$rc" -ne 0 ]; then
+    echo "You should run this script with a valid ssh-add session."
+    exit 1
+fi
+
+serviceName=therm-gateway
+
+# Local directories
+#   dist/gateway/therm-gateway_amd64
+#   dist/gateway/therm-gateway_armv6
+#   dist/gateway/init-gateway_systemd.conf
+#   dist/gateway/init-gateway_upstart.conf
+#   dist/gateway/proxy.my.example.com.crt
+locDist="dist/gateway"
+# Server address
+srvHost=xxx
+srvHostPort=xxx
+srvHostUser=xxx
+# Server temporary distribution
+srvDist="/tmp/therm-gateway/dist"
+# Server target directories
+#   ~/apps/home/therm/therm-gateway
+#   ~/apps/home/therm/init-systemd.conf
+srvAppRoot="/home/$srvHostUser/apps/home/therm"
+
+# Checking existence of selected needed files
+[ -f "$locDist/${serviceName}_amd64" ]
+[ -f "$locDist/${serviceName}_armv6" ]
+[ -f "$locDist/init-gateway_systemd.conf" ]
+[ -f "$locDist/init-gateway_upstart.conf" ]
+[ -f "$locDist/proxy.my.example.com.crt" ]
+
+
+# Server installation script
+install () {
+    set -o errexit
+    set -o nounset
+
+    # Checking required variables
+    echo "Installing to $(whoami)@$(hostname):$srvAppRoot"
+    echo "${srvAppRoot:?}" > /dev/null
+    echo "${srvDist:?}" > /dev/null
+    echo "${serviceName:?}" > /dev/null
+
+    # Stopping server
+    sudo service "$serviceName" stop || true
+
+    # Deploying dist
+    echo "  Deploying to $srvAppRoot/"
+    mkdir -p "$srvAppRoot/"
+    cp "$srvDist/${serviceName}_"* "$srvAppRoot/"
+    cp "$srvDist/init-gateway_systemd.conf" "$srvAppRoot/init-systemd.conf"
+    cp "$srvDist/init-gateway_upstart.conf" "$srvAppRoot/init-upstart.conf"
+    cp "$srvDist/proxy.my.example.com.crt" "$srvAppRoot/"
+
+    # Choosing the right binary
+    if uname -a | grep -q "x86_64"; then
+        arch="amd64"
+    elif uname -a | grep -q "armv6"; then
+        arch="armv6"
+    else
+        echo "  Unsupported architecture"
+        uname -a
+        exit 1
+    fi
+    echo "  Deploying linux_$arch binary"
+    cp "$srvAppRoot/${serviceName}_$arch" $"$srvAppRoot/$serviceName"
+    rm -f "$srvAppRoot/${serviceName}_"*
+
+    # Configuring the right daemon
+    if [ -d "/run/systemd/system" ]; then
+        # Daemon run by systemd
+        echo "  Configuring systemd daemon"
+        rm -f "$srvAppRoot/init-upstart.conf"
+        sudo ln -f "$srvAppRoot/init-systemd.conf" "/lib/systemd/system/$serviceName.service"
+        sudo systemctl daemon-reload
+        sudo systemctl enable "$serviceName"
+    else
+        # Daemon run by Upstart
+        echo "  Configuring upstart daemon"
+        rm -f "$srvAppRoot/init-systemd.conf"
+        sudo ln -sf "$srvAppRoot/init-upstart.conf" "/etc/init/$serviceName.conf"
+        sudo initctl reload-configuration
+    fi
+
+    # Reloading services
+    echo "  Relaunching services"
+    sudo service "$serviceName" start
+    sudo service nginx reload
+
+    # Showing status
+    sudo service "$serviceName" status
+
+    # Cleaning-up dist folder
+    echo "  Cleaning-up dist forlder"
+    rm -r "$srvDist"
+
+    echo "  Installation successful :)"
+    exit 0
+}
+
+
+# Server update script
+update () {
+    set -o errexit
+    set -o nounset
+
+    # Checking required variables
+    echo "Installing to $(whoami)@$(hostname):$srvAppRoot"
+    echo "${srvAppRoot:?}" > /dev/null
+    echo "${srvDist:?}" > /dev/null
+    echo "${serviceName:?}" > /dev/null
+
+    # Stopping server
+    sudo service "$serviceName" stop || true
+
+    # Deploying dist
+    echo "  Deploying to $srvAppRoot/"
+    mkdir -p "$srvAppRoot/"
+    cp "$srvDist/${serviceName}_"* "$srvAppRoot/"
+
+    # Choosing the right binary
+    if uname -a | grep -q "x86_64"; then
+        arch="amd64"
+    elif uname -a | grep -q "armv6"; then
+        arch="armv6"
+    else
+        echo "  Unsupported architecture"
+        uname -a
+        exit 1
+    fi
+    echo "  Deploying linux_$arch binary"
+    cp "$srvAppRoot/${serviceName}_$arch" $"$srvAppRoot/$serviceName"
+    rm -f "$srvAppRoot/${serviceName}_"*
+
+    # Reloading services
+    echo "  Relaunching services"
+    sudo service "$serviceName" start
+    sudo service nginx reload
+
+    # Showing status
+    sudo service "$serviceName" status
+
+    # Cleaning-up dist folder
+    echo "  Cleaning-up dist forlder"
+    rm -r "$srvDist"
+
+    echo "  Update successful :)"
+    exit 0
+}
+
+
+echo "Uploading distribution files to $srvHostUser@$srvHost:$srvHostPort:$srvDist"
+ssh -p $srvHostPort "$srvHostUser@$srvHost" "mkdir -p \"$srvDist/\""
+scp -rpP $srvHostPort "$locDist/"* "$srvHostUser@$srvHost:$srvDist"
+if [ "$1" == "INSTALL" ]; then
+    ssh -tp $srvHostPort "$srvHostUser@$srvHost" "$(typeset -f install); srvAppRoot=\"$srvAppRoot\" srvDist=\"$srvDist\" serviceName=\"$serviceName\" install"
+    echo "/!\\ Please check that proxy.my.example.com is defined in /etc/hosts"
+elif [ "$1" == "UPDATE" ]; then
+    ssh -tp $srvHostPort "$srvHostUser@$srvHost" "$(typeset -f update); srvAppRoot=\"$srvAppRoot\" srvDist=\"$srvDist\" serviceName=\"$serviceName\" update"
+fi
+
+echo "Deployment successful :)"
+exit 0
